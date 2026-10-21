@@ -1,0 +1,13 @@
+SENTINEL demo: 10 identical synthetic errors, 4 alert notifications.
+ALERT [LOW] web-01 | DATABASE | count=1 | Database connection pool exhausted
+ALERT [MEDIUM] web-01 | DATABASE | count=3 | Database connection pool exhausted
+ALERT [HIGH] web-01 | DATABASE | count=5 | Database connection pool exhausted
+ALERT [CRITICAL] web-01 | DATABASE | count=10 | Database connection pool exhausted
+
+================ SENTINEL | SERVER HEALTH ================
+Observed alert state: CRITICAL
+Events: 10 | Alert events: 10 | Emitted: 4 | Suppressed: 6 | Invalid: 0
+Alert-notification reduction: 60.0%
+SERVER       CATEGORY    SEVERITY    COUNT  MESSAGE
+web-01       DATABASE    CRITICAL       10  Database connection pool exhausted
+==========================================================

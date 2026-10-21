@@ -1,0 +1,3 @@
+e7c2a48e8515ba1f49fa637d57b4e2f590b3f5bd97407ac699c3aa5efb1204a9  lib/slf4j-api-2.0.13.jar
+8962a107b4a8bdf80b6c17e470cd3614ad3329643833ff5cf0c60c7dce9deaac  lib/slf4j-nop-2.0.13.jar
+6dc7464e3803648d3ff18a7359bab6adf079fcd8495b18991f6f5edcb8ac6e3b  lib/sqlite-jdbc-3.46.1.0.jar
