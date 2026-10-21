@@ -1,0 +1,10 @@
+# Synthetic sample server logs. These are not measurements of a real machine.
+2026-10-20T10:00:00Z|web-01|application|INFO|Service started
+2026-10-20T10:00:01Z|web-01|database|ERROR|Database connection pool exhausted
+2026-10-20T10:00:02Z|web-01|database|ERROR|Database connection pool exhausted
+2026-10-20T10:00:03Z|web-01|database|ERROR|Database connection pool exhausted
+2026-10-20T10:00:04Z|worker-01|memory|WARN|Heap usage above 85 percent
+2026-10-20T10:00:05Z|worker-01|disk|ERROR|Disk usage above 90 percent
+2026-10-20T10:00:06Z|gateway-01|network|ERROR|Network timeout contacting upstream
+2026-10-20T10:00:07Z|web-01|cpu|WARN|CPU usage above 90 percent
+2026-10-20T10:00:08Z|worker-02|application|FATAL|Worker process crashed
