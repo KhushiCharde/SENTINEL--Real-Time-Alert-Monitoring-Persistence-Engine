@@ -1,3 +1,3 @@
 @echo off
 cd /d "%~dp0"
-java -cp "sentinel.jar;lib/*" sentinel.Main %*
+java -cp "sentinel.jar;*" sentinel.Main %*

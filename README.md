@@ -1,183 +1,159 @@
-# SENTINEL — Real-Time Alert Monitoring
+# SENTINEL — Real-Time Alert Monitoring & Persistence Engine
 
-A lightweight Core Java CLI that follows server log files, categorizes health events,
-aggregates repeated errors with a HashMap, escalates severity, and saves history in SQLite through JDBC.
-No Spring, web server, cloud account, or external database server required.
+**Live demo:** https://sentinel-java-production.up.railway.app/
 
-## Start on Windows (PowerShell / VS Code terminal)
+A lightweight Core Java log monitor using HashMap deduplication, threshold-based
+severity escalation, SQLite storage through JDBC, and CLI and browser dashboards.
+The public web dashboard accepts predefined synthetic events; it does not measure
+real server hardware or accept private log uploads.
 
-1. Install Java 17 or newer. A JRE can run the included JAR; a **JDK** is needed to edit/rebuild.
-2. Extract the ZIP completely, open the `sentinel` folder, and open a terminal in that folder.
-3. Check `java -version`, then run:
+## Repository layout
+
+This repository keeps Java source files, runtime dependency JARs, sample logs,
+launchers, and the web page directly in the root. The build and deployment
+configuration supports this layout; do not move individual files without updating it.
+
+## Run on Windows
+
+Install Java 17 or newer, download/extract the repository, and open a terminal there:
 
 ```powershell
 .\run.bat demo
+.\run.bat history
+.\run.bat read server.log
 ```
 
-The included compiled `sentinel.jar` and `lib/` dependencies are ready to run.
-Do not run from inside the ZIP, and keep the `lib` folder beside the JAR.
-
-Expected key output:
-
-```text
-ALERT [LOW] ... count=1
-ALERT [MEDIUM] ... count=3
-ALERT [HIGH] ... count=5
-ALERT [CRITICAL] ... count=10
-Events: 10 | Alert events: 10 | Emitted: 4 | Suppressed: 6 | Invalid: 0
-Alert-notification reduction: 60.0%
-```
-
-Each demo run adds ten synthetic records to the database. Session counters reset on restart;
-stored history is preserved. Run `history` to inspect earlier records.
+The bundled `sentinel.jar` is ready to run with the dependency JARs beside it.
+To open the browser dashboard locally:
 
 ```powershell
-.\run.bat history
-.\run.bat read samples/server.log
+java -cp "sentinel.jar;*" sentinel.WebServer
 ```
 
-## Demonstrate real-time monitoring
+Visit http://localhost:8080. The browser UI calls the same Java aggregation,
+classification, severity policy, and JDBC persistence classes as the CLI.
+On Linux/macOS, use `sh run.sh demo` or `java -cp 'sentinel.jar:*' sentinel.WebServer`.
 
-Open two terminals in the extracted `sentinel` folder.
-In terminal 1:
+## Real-time log demonstration
+
+Start two terminals in this folder. In the first:
 
 ```powershell
 .\run.bat watch samples/live.log --from-end
 ```
 
-In terminal 2:
+In the second:
 
 ```powershell
 .\simulate.bat
 ```
 
-The producer appends ten synthetic errors, one per second. The monitor picks up complete
-lines within its 250 ms poll interval, emits new/escalated alerts, and prints a dashboard
-roughly every five seconds. Stop the monitor with Ctrl+C. Run the monitor first.
-The monitor waits if the file does not exist yet. `--from-end` skips existing content
-when the watcher starts; newly created files are read from the beginning. Omit it to read existing content before following new lines.
-Use a fresh log file for a clean demo if needed: `watch samples/new.log --from-end`
-and `simulate.bat samples/new.log`.
+The synthetic producer creates/appends ten errors at one-second intervals.
+The monitor polls every 250 ms and prints a dashboard roughly every five seconds.
+Ctrl+C stops monitoring. `--from-end` skips a file's existing content when the
+watcher starts; a file created afterward is read from the beginning.
 
-Linux/macOS equivalents: `sh run.sh demo`, `sh run.sh history`,
-`sh run.sh watch samples/live.log --from-end`, `sh simulate.sh`.
-
-## Input format
-
-UTF-8 text; one newline-terminated record per line:
+## Log format
 
 ```text
 2026-10-20T10:00:01Z|web-01|database|ERROR|Database connection pool exhausted
 ```
 
-Fields: ISO-8601 timestamp with UTC/offset, server, component, level, message.
-Levels: INFO, WARN, ERROR, FATAL (case-insensitive). Messages may contain pipes;
-the first four fields may not. Blank lines and lines beginning with `#` are ignored.
-Malformed records are reported and skipped. Live records over 64 KiB are discarded.
-Use your server application's logging configuration or a small adapter to produce this format.
+The five fields are timestamp, server, component, level, and message. Timestamp
+must be ISO-8601 with a UTC/offset designation. Levels: INFO, WARN, ERROR, FATAL.
+Messages may include pipes. Blank lines and lines starting with `#` are ignored;
+malformed lines are reported and skipped. Live input lines over 64 KiB are discarded.
 
-Categories are keyword-based: DATABASE, MEMORY, DISK, CPU, NETWORK, APPLICATION.
-This classifies existing log messages; it does not directly sample CPU, RAM, temperature,
-or disk metrics. The supplied input data and producer are synthetic demonstrations.
-The dashboard summarizes observed alerts, not independently verified server availability.
+Keyword-based categories: DATABASE, MEMORY, DISK, CPU, NETWORK, APPLICATION.
+This processes existing structured logs; a logging adapter is required for other formats.
 
-## Deduplication and escalation
+## Deduplication and severity
 
-The HashMap key is `(server, component, original level, exact trimmed message)`.
-Different servers, levels, components, and messages never merge. Volatile request IDs or
-numbers inside a message produce different signatures; this version intentionally avoids
-fuzzy normalization.
+The HashMap key contains server, component, original level, and exact trimmed message.
+Each signature has a fixed window beginning when its first event is processed.
+The default is 60 seconds; configure it using `--window 120` (1–86400 seconds).
 
-For each signature, a **fixed 60-second window starts when its first event is processed**.
-Incoming repeats increment its count. Only the first occurrence and severity changes
-produce alert notifications. A quiet window expires and disappears from the active dashboard;
-the next occurrence starts again at LOW. This is expiry, not proof of recovery.
-
-| Count inside window | Severity |
+| Occurrences inside a window | Severity |
 | --- | --- |
 | 1–2 | LOW |
 | 3–4 | MEDIUM |
 | 5–9 | HIGH |
 | 10+ | CRITICAL |
 
-FATAL logs become CRITICAL immediately. INFO logs are stored but do not create alerts.
-The thresholds are policy choices for demonstration, not an ML model.
-Window lengths are configurable:
+Only first occurrences and severity changes produce console notifications. All
+valid events, including duplicates and INFO, are saved. FATAL is immediately
+CRITICAL. INFO does not create an alert. Quiet windows expire; expiry does not
+prove recovery. Counts reset on restart, and history remains in SQLite.
 
-```powershell
-.\run.bat watch samples/live.log --window 120 --db data/custom.db
-```
-
-Use 1–86400 seconds. Threshold counts are defined in `Severity.java`.
-Window timing uses ingestion/processing time rather than timestamps inside historical logs.
-Ten same-signature events within a window generate four notifications (counts 1,3,5,10).
-The measured suppression is `(10 - 4) / 10 * 100 = 60%` for **that workload**.
-Real logs may produce a different reduction. Dashboard lines and malformed-input diagnostics
-are excluded from this metric; it measures alert notifications, not every terminal line.
+The included repeated-error demo produces 10 events and 4 notifications at counts
+1, 3, 5, and 10: `(10-4)/10 * 100 = 60%` suppression for that workload. This is a
+measured notification reduction, not a universal performance claim. Dashboard
+lines are excluded from the metric. Mixed or unique errors produce different results.
 
 ## Persistence
 
-SQLite creates `data/sentinel.db` automatically. JDBC uses prepared statements and a transaction
-per event. Every valid event is stored, including INFO and suppressed duplicates. The
-`alert_transitions` table records initial alerts and severity upgrades linked to their events.
-No history is silently dropped when deduplication suppresses a console notification.
-A database write error stops processing with an error. See `samples/queries.sql` for SQL examples.
+The CLI creates `data/sentinel.db`; the web adapter creates `data/sentinel-web.db`
+by default. `--db PATH` configures CLI storage. The web adapter reads `SENTINEL_DB`.
+The `events` table retains every valid event. `alert_transitions` stores initial
+alerts and severity changes, linked to the triggering event. Each event is written
+using prepared statements in a transaction. A write failure stops CLI processing.
+`queries.sql` contains example SQL queries. `history` displays the latest 20 records.
 
-Restarting preserves SQL history but resets in-memory aggregation; counts do not resume.
-Reading the same file twice deliberately inserts it twice. There is no persistent file-offset
-checkpoint or exactly-once ingestion guarantee. `watch` handles detected replacement and
-truncation, but fast copy-truncate/regrow between polls and rotation races can lose events.
-An incomplete final live line waits for a newline. One process should own a watched input;
-this is a single-machine, single-threaded student project, not a distributed log platform.
+## Rebuild and validate
 
-Active memory is limited to 10,000 signatures; exceeding that stops monitoring with a clear
-error. Expired signatures are pruned. Database history grows until the user archives/deletes it.
-The implementation favors easy-to-explain logic over high-throughput ingestion: each event
-is committed independently and the map is scanned for expiry.
-
-## Edit and rebuild
-
-The project includes its complete source. With JDK 17+ installed:
+A **JDK 17+** is required to compile. On Windows:
 
 ```powershell
 .\build.bat
 .\test.bat
-.\run.bat demo
 ```
 
 On Linux/macOS: `sh build.sh`, `sh test.sh`.
-The build scripts use `javac` and `jar`; no Maven installation is needed.
-Alternatively `mvn package` produces `target/sentinel-1.0.0.jar` and `target/lib/`;
-run `java -jar target/sentinel-1.0.0.jar demo` from the project directory.
+The checks cover escalation boundaries, signature isolation, expiry/reset,
+SQLite reconnect/history, malformed input, and terminal-control sanitization.
+Alternatively `mvn package` builds the main program, copies dependencies to
+`target/lib/`, and produces `target/sentinel-1.0.0.jar`. The standalone CoreChecks
+are run using the test scripts, not automatically by Maven.
+
+## Deploy with Railway
+
+The root `Dockerfile` compiles the Java source and launches `sentinel.WebServer`.
+The root `railway.toml` sets Docker deployment and the `/health` health check.
+Connect this repository to a Railway service, configure `PORT=8080` and
+`SENTINEL_DB=/data/sentinel-web.db`, attach a persistent volume at `/data`, and
+create a public domain targeting port 8080. Use one replica with this SQLite design.
+
+The already-live deployment was created independently of this GitHub repository.
+Uploading files alone does not connect Railway auto-deployment to the repository.
+
+## Source files
 
 | File | Responsibility |
 | --- | --- |
-| `Main.java` | Commands, input processing, counters |
-| `LogEvent.java` | Parse input and categorize events |
-| `AlertEngine.java` | HashMap signatures, fixed windows, aggregation |
-| `Severity.java` | Count thresholds |
-| `HistoryStore.java` | JDBC schema, transactions, history |
-| `Dashboard.java` | Formatted terminal status |
-| `FileTailer.java` | Follow appended UTF-8 lines |
-| `SampleLogWriter.java` | Produce synthetic logs for demonstration |
-| `CoreChecks.java` | Deterministic checks of core behavior |
+| Main.java | CLI commands, processing, counters |
+| LogEvent.java | Parsing and category classification |
+| AlertEngine.java | HashMap aggregation and fixed windows |
+| Severity.java | Threshold policy |
+| HistoryStore.java | JDBC transactions and persistent history |
+| FileTailer.java | Following appended UTF-8 log lines |
+| Dashboard.java | CLI status rendering |
+| SampleLogWriter.java | Synthetic live producer |
+| WebServer.java | Thin Java HTTP adapter and JSON endpoints |
+| index.html | Browser dashboard |
+| CoreChecks.java | Dependency-free validation |
 
-## Dependencies
+## Scope and limitations
 
-The bundled runtime libraries are Xerial SQLite JDBC 3.46.1.0 and SLF4J API/NOP 2.0.13.
-They are pinned for a reproducible build; not a claim to use the newest releases.
-Original downloads: https://repo.maven.apache.org/maven2/.
-SQLite JDBC documentation: https://github.com/xerial/sqlite-jdbc.
-SLF4J documentation: https://www.slf4j.org/.
-Original upstream license/notice resources remain inside the dependency JARs;
-see `THIRD_PARTY_NOTICES.md`.
+This is a single-machine student project. It has no distributed ingestion,
+exactly-once guarantees, authentication for the public synthetic sandbox, or
+checkpointed file offsets. Replaying a file intentionally stores it again.
+The live tailer detects visible truncation and replacement, but rapid rotation
+races may lose events. A final partial live line waits for a newline.
+Aggregation memory is capped at 10,000 signatures. Each event is committed
+independently and expiry scans the map, favoring clear logic over throughput.
+The browser sandbox has a 100,000-event storage guard and a two-second demo cooldown.
+Visitors share the synthetic sandbox; counters reset after restart while history
+persists on the attached volume. Database history needs manual archival/retention.
 
-## Interview explanation
-
-“I built SENTINEL in Core Java to process server health logs. It reads a structured log
-file continuously, groups matching errors using a HashMap, and escalates alerts when
-occurrences cross configured thresholds. I used JDBC and SQLite to preserve every event
-and severity transition, and a CLI dashboard to show active alerts. In the included
-10-event repeated-error demo, it reduces alert notifications from 10 to 4, a 60% reduction.”
-
-Only say you implemented and tested the parts you understand and can demonstrate.
+Dependencies: Xerial SQLite JDBC 3.46.1.0; SLF4J API/NOP 2.0.13. These are pinned
+for reproducibility. See THIRD_PARTY_NOTICES.md for upstream notices.

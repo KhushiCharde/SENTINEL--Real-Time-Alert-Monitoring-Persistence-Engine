@@ -2,5 +2,5 @@
 set -eu
 cd "$(dirname "$0")"
 sh build.sh
-javac --release 17 -cp 'build:lib/*' -d build src/test/java/sentinel/*.java
-java -cp 'build:lib/*' sentinel.CoreChecks
+javac --release 17 -cp 'build:*' -d build CoreChecks.java
+java -cp 'build:*' sentinel.CoreChecks
